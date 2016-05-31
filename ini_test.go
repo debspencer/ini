@@ -103,6 +103,10 @@ lots_of_lines = 1 \
 	2 \
 	3 \
 	4 \
+more_lines = 1
+	2
+	3
+	4
 `
 
 func Test_Load(t *testing.T) {

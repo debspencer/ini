@@ -119,7 +119,7 @@ func readKeyName(in []byte) (string, int, error) {
 
 	endIdx = strings.IndexAny(line, "=:")
 	if endIdx < 0 {
-		return "", -1, fmt.Errorf("key-value delimiter not found: %s", line)
+		return "", 0, nil
 	}
 	return strings.TrimSpace(line[0:endIdx]), endIdx + 1, nil
 }
@@ -235,6 +235,7 @@ func (f *File) parse(reader io.Reader) (err error) {
 	section, _ := f.NewSection(DEFAULT_SECTION)
 
 	var line []byte
+	var key *Key
 	for !p.isEOF {
 		line, err = p.readUntil('\n')
 		if err != nil {
@@ -243,6 +244,7 @@ func (f *File) parse(reader io.Reader) (err error) {
 
 		line = bytes.TrimLeftFunc(line, unicode.IsSpace)
 		if len(line) == 0 {
+			key = nil
 			continue
 		}
 
@@ -257,6 +259,8 @@ func (f *File) parse(reader io.Reader) (err error) {
 
 		// Section
 		if line[0] == '[' {
+			key = nil
+
 			// Read to the next ']' (TODO: support quoted strings)
 			closeIdx := bytes.IndexByte(line, ']')
 			if closeIdx == -1 {
@@ -285,28 +289,42 @@ func (f *File) parse(reader io.Reader) (err error) {
 		if err != nil {
 			return err
 		}
-
-		// Auto increment.
-		isAutoIncr := false
-		if kname == "-" {
-			isAutoIncr = true
-			kname = "#" + strconv.Itoa(p.count)
-			p.count++
+		if offset == 0 {
+			if key == nil {
+				return fmt.Errorf("key-value delimiter not found: %s", line)
+			}
+		} else {
+			key = nil
 		}
 
-		key, err := section.NewKey(kname, "")
-		if err != nil {
-			return err
+		if key == nil {
+			// Auto increment.
+			isAutoIncr := false
+			if kname == "-" {
+				isAutoIncr = true
+				kname = "#" + strconv.Itoa(p.count)
+				p.count++
+			}
+
+			key, err = section.NewKey(kname, "")
+			if err != nil {
+				return err
+			}
+			key.isAutoIncr = isAutoIncr
 		}
-		key.isAutoIncr = isAutoIncr
 
 		value, err := p.readValue(line[offset:])
 		if err != nil {
 			return err
 		}
-		key.SetValue(value)
-		key.Comment = strings.TrimSpace(p.comment.String())
-		p.comment.Reset()
+		if offset == 0 {
+			cur := key.Value()
+			key.SetValue(cur + " " + value)
+		} else {
+			key.SetValue(value)
+			key.Comment = strings.TrimSpace(p.comment.String())
+			p.comment.Reset()
+		}
 	}
 	return nil
 }
